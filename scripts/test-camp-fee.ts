@@ -2,6 +2,7 @@
  * 캠프 수강료 시험 — 2026 윈터캠프 요금표 24칸을 campFee 로 다시 셉니다.
  * 요금표가 바뀌면 이 표를 새 요금표로 고칩니다. 식이 표와 어긋나면 빌드가 멈춥니다.
  */
+import { matchCampStudent, campGroupOf } from "../src/lib/campMatch";
 import { campDiscountOf, campFee, parseShuttle, parseWeeks, readCampForm, type CampDiscount, type CampShuttle } from "../src/lib/campFee";
 
 let fail = 0;
@@ -81,6 +82,28 @@ eq("윈터 주 기본 3", [w.weeks, w.weeks_assumed], [3, true]);
 eq("윈터 문의 글", !!w.note, true);
 eq("셔틀 아니오", parseShuttle("No."), "미이용");
 eq("셔틀 왕복", parseShuttle("Yes: Round-trip"), "왕복");
+
+// 자동 연결 — 확실한 것만 잇는다
+{
+  const roster = [
+    { id: "a", name: "김재이", birth_date: "2017-03-01", status: "active" },
+    { id: "b", name: "김재이", birth_date: "2016-05-02", status: "active" },
+    { id: "c", name: "박하늘", name_en: "Haneul Park", birth_date: null, status: "active" },
+    { id: "d", name: "이서준", birth_date: "2018-01-01", status: "inactive" },
+    { id: "e", name: "이서준", birth_date: null, status: "active" },
+  ];
+  eq("한 명뿐인 이름", matchCampStudent({ applicant_name: "박 하늘" }, roster), { studentId: "c", by: "이름" });
+  eq("동명이인 + 생일로 한 명", matchCampStudent({ applicant_name: "김재이", birth_date: "2016-05-02" }, roster), { studentId: "b", by: "이름+생일" });
+  eq("동명이인 + 생일 없음 → 사람이", matchCampStudent({ applicant_name: "김재이" }, roster), { ambiguous: 2 });
+  eq("명부 생일이 비어 있으면 이름으로", matchCampStudent({ applicant_name: "박하늘", birth_date: "2015-01-01" }, roster), { studentId: "c", by: "이름" });
+  eq("생일이 다른 동명이인은 빠짐", matchCampStudent({ applicant_name: "이서준", birth_date: "2019-09-09" }, roster), { studentId: "e", by: "이름" });
+  eq("동명이인 + 재학 답 → 재학생 한 명", matchCampStudent({ applicant_name: "이서준", says_current: true }, roster), { studentId: "e", by: "이름+재학" });
+  eq("영문 이름", matchCampStudent({ applicant_name: "", applicant_name_en: "haneul park" }, roster), { studentId: "c", by: "영문 이름" });
+  eq("명부에 없음", matchCampStudent({ applicant_name: "최외부" }, roster), null);
+  eq("묶음: 이어진 재학생", campGroupOf("active", false), "재학생");
+  eq("묶음: 이어진 캠프 학생", campGroupOf("캠프", true), "외부");
+  eq("묶음: 안 이음 + 재학 답", campGroupOf(null, true), "재학생");
+}
 
 if (fail) {
   console.error(`캠프 수강료 시험 ${fail}건 실패`);

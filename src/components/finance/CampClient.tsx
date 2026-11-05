@@ -7,6 +7,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import { Who } from "@/components/common/HomonymProvider";
 import { APP_ORIGIN } from "@/lib/appUrl";
 import { TERM_GROUPS } from "@/lib/termTypes";
+import { campGroupOf } from "@/lib/campMatch";
 import {
   CAMP_DISCOUNTS,
   CAMP_SHUTTLES,
@@ -83,7 +84,7 @@ export default function CampClient({
   const router = useRouter();
   const notify = useToast();
   const [busy, setBusy] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"전체" | "접수" | "확정" | "취소" | "미연결">("전체");
+  const [filter, setFilter] = useState<"전체" | "접수" | "확정" | "취소" | "미연결" | "재학생" | "외부">("전체");
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(!link);
@@ -126,9 +127,12 @@ export default function CampClient({
     return v && v.status !== "취소" ? v : undefined;
   };
 
+  /** 재학생/외부 — 이어진 학생의 상태가 먼저, 아직 안 이었으면 폼의 답. 청구서도 이 묶음별로 냅니다. */
+  const groupOf = (a: CampApp) => campGroupOf(a.student_id ? studentOf.get(a.student_id)?.status ?? null : null, a.says_current);
   const shown = apps.filter((a) => {
     if (filter === "미연결" && a.student_id) return false;
-    if (filter !== "전체" && filter !== "미연결" && a.status !== filter) return false;
+    if ((filter === "재학생" || filter === "외부") && (a.status === "취소" || groupOf(a) !== filter)) return false;
+    if (filter !== "전체" && filter !== "미연결" && filter !== "재학생" && filter !== "외부" && a.status !== filter) return false;
     if (filter === "전체" && a.status === "취소") return false;
     if (!q.trim()) return true;
     const k = key(q);
@@ -137,6 +141,22 @@ export default function CampClient({
 
   const live = apps.filter((a) => a.status !== "취소");
   const billed = live.map(liveInv).filter((v): v is CampInvoice => !!v);
+  // 바로 청구서를 낼 수 있는 줄(학생 연결 + 금액 계산 가능 + 아직 안 나감) — 묶음별 일괄 발행 단추의 숫자.
+  const ready = (g: "재학생" | "외부") => live.filter((a) => a.student_id && !liveInv(a) && groupOf(a) === g && rowFee(a).amount != null).length;
+  const externalUnlinked = live.filter((a) => !a.student_id && !a.says_current).length;
+  async function bulk(payload: Record<string, unknown>, label: string) {
+    const r = await act({ ...payload, termId });
+    if (!r) return;
+    const failed = (r.failed as string[] | undefined) ?? [];
+    const ask = (r.ask as string[] | undefined) ?? [];
+    const parts = [
+      r.linked != null ? `${r.linked}명 연결${r.ambiguous ? ` · 같은 이름이 여럿이라 ${r.ambiguous}명은 직접 골라주세요` : ""}` : null,
+      r.made != null ? `${r.made}건 완료` : null,
+      ask.length ? `같은 이름이 명부에 있어 넣지 않음: ${ask.join(", ")} (표에서 직접 확인)` : null,
+      failed.length ? `실패 ${failed.length}건: ${failed.slice(0, 3).join(" / ")}` : null,
+    ].filter(Boolean);
+    notify(`${label} — ${parts.join(" · ") || "할 것이 없었습니다"}`, failed.length ? "error" : "success");
+  }
   const totals = {
     count: live.length,
     unlinked: live.filter((a) => !a.student_id).length,
@@ -171,6 +191,19 @@ export default function CampClient({
             ))}
           </select>
         )}
+        {term && (
+          <button
+            disabled={!!busy}
+            onClick={() => {
+              const reopen = term.status === "종료";
+              if (!window.confirm(reopen ? `${termLabel}을(를) 다시 엽니다. 구글폼 연결·신청·청구서를 쓸 수 있습니다.` : `${termLabel}을(를) 닫습니다(끝남). 신청·청구서는 그대로 남습니다.`)) return;
+              void act({ action: "setStatus", termId, status: reopen ? "예정" : "종료" }, reopen ? "캠프를 다시 열었습니다." : "캠프를 닫았습니다.");
+            }}
+            className={`rounded-lg px-2 py-1 text-[11px] font-bold ${term.status === "종료" ? "bg-emerald-600 text-white" : "border border-slate-300 text-slate-500"}`}
+          >
+            {term.status === "종료" ? "다시 열기" : "캠프 닫기"}
+          </button>
+        )}
         <NewCamp onMake={(termType, year) => act({ action: "createTerm", termType, year }).then((r) => r?.termId && router.push(`/finance/camp?term=${r.termId}`))} />
         <span className="ml-auto text-[11px] text-slate-500">주당 90만원 · 셔틀 미이용 주당 −5만 · 편도 주당 −2.5만 · 할인은 하나만(재학생 30% / 외부 형제 10% / 외부 재수강 5%)</span>
       </div>
@@ -191,16 +224,48 @@ export default function CampClient({
             <Stat label="수납 · 잔액" value={`${won(totals.paid)} · ${won(totals.billed - totals.paid)}`} />
           </div>
 
+          {term.status === "종료" && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+              끝난 캠프입니다. 이 캠프로 새 신청을 받으려면 위의 <b>다시 열기</b>를 누르세요.
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50/50 px-2 py-1.5 text-[12px]">
+            <span className="font-bold text-indigo-900">한꺼번에</span>
+            <button disabled={!!busy || totals.unlinked === 0} onClick={() => void bulk({ action: "autoLink" }, "자동 연결")} className="rounded border border-indigo-200 bg-white px-2 py-0.5 font-bold text-indigo-800 disabled:opacity-40" title="명부에 같은 이름이 한 명뿐이거나 생일로 한 명이 되는 신청만 잇습니다. 같은 이름이 여럿이면 직접 고릅니다.">
+              ① 재학생 자동 연결 ({totals.unlinked})
+            </button>
+            <button
+              disabled={!!busy || externalUnlinked === 0}
+              onClick={() => window.confirm(`「재학생 아님」으로 답한 ${externalUnlinked}명을 외부 학생(캠프)으로 명부에 넣고 잇습니다. 같은 이름이 명부에 있는 아이는 넣지 않고 남깁니다.`) && void bulk({ action: "bulkExternal" }, "외부 학생 등록")}
+              className="rounded border border-indigo-200 bg-white px-2 py-0.5 font-bold text-indigo-800 disabled:opacity-40"
+            >
+              ② 외부 학생 등록·연결 ({externalUnlinked})
+            </button>
+            <span className="mx-1 text-slate-300">|</span>
+            {(["재학생", "외부"] as const).map((g) => (
+              <button
+                key={g}
+                disabled={!!busy || ready(g) === 0}
+                onClick={() => window.confirm(`${g === "외부" ? "외부 학생" : "재학생"} ${ready(g)}명의 ${termLabel} 청구서를 한꺼번에 만듭니다. 금액은 표의 할인·주·셔틀 그대로입니다.`) && void bulk({ action: "bulkIssue", group: g }, `${g} 청구서`)}
+                className="rounded bg-indigo-600 px-2 py-0.5 font-bold text-white disabled:bg-slate-200 disabled:text-slate-400"
+              >
+                ③ {g === "외부" ? "외부 학생" : "재학생"} 청구서 {ready(g)}장 발행
+              </button>
+            ))}
+            <span className="text-[10px] text-slate-500">주·셔틀이 비었거나 학생이 안 이어진 줄은 빠집니다.</span>
+          </div>
+
           <FormLink termId={termId} termLabel={termLabel} link={link} open={showForm} setOpen={setShowForm} act={act} busy={busy} />
 
           <div className="flex flex-wrap items-center gap-1">
-            {(["전체", "미연결", "접수", "확정", "취소"] as const).map((f) => (
+            {(["전체", "재학생", "외부", "미연결", "접수", "확정", "취소"] as const).map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
                 className={`rounded-full px-2.5 py-1 text-[12px] font-bold ${filter === f ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600"}`}
               >
-                {f === "미연결" ? "학생 연결 전" : f}
+                {f === "미연결" ? "학생 연결 전" : f === "외부" ? `외부 (${live.filter((a) => groupOf(a) === "외부").length})` : f === "재학생" ? `재학생 (${live.filter((a) => groupOf(a) === "재학생").length})` : f}
               </button>
             ))}
             <input
@@ -249,6 +314,7 @@ export default function CampClient({
                         </td>
                         <td className="px-2 py-1.5">
                           <div className="font-bold text-slate-800">
+                            <span className={`mr-1 rounded px-1 text-[10px] font-bold ${groupOf(a) === "재학생" ? "bg-emerald-100 text-emerald-800" : "bg-sky-100 text-sky-800"}`}>{groupOf(a)}</span>
                             {a.applicant_name || <span className="text-red-600">이름 못 읽음</span>}
                             {a.applicant_name_en && <span className="ml-1 font-normal text-slate-500">{a.applicant_name_en}</span>}
                           </div>

@@ -28,7 +28,14 @@ export default async function CampPage({ searchParams }: { searchParams: Promise
     .order("year", { ascending: false })
     .order("term_type");
   const terms = (termRows ?? []) as CampTerm[];
-  const termId = terms.some((t) => t.id === sp.term) ? sp.term! : (terms.find((t) => t.status !== "종료") ?? terms[0])?.id ?? "";
+  // 열린 캠프가 여럿이면 신청이 들어와 있는(또는 폼이 이어진) 캠프를 먼저 엽니다. 빈 캠프가 먼저 열리면 «신청 0명»으로 보입니다.
+  const open = terms.filter((t) => t.status !== "종료");
+  let busyTerm: string | null = null;
+  if (!terms.some((t) => t.id === sp.term) && open.length > 1) {
+    const { data: hit } = await supabase.from("camp_applications").select("term_id").in("term_id", open.map((t) => t.id)).limit(1);
+    busyTerm = (hit?.[0]?.term_id as string | undefined) ?? null;
+  }
+  const termId = terms.some((t) => t.id === sp.term) ? sp.term! : busyTerm ?? (open[0] ?? terms[0])?.id ?? "";
 
   let apps: CampApp[] = [];
   let invoices: CampInvoice[] = [];

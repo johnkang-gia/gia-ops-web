@@ -8,6 +8,8 @@ import { Who } from "@/components/common/HomonymProvider";
 import { APP_ORIGIN } from "@/lib/appUrl";
 import { TERM_GROUPS } from "@/lib/termTypes";
 import { campGroupOf, campLinkSuspect } from "@/lib/campMatch";
+import CancelInvoiceModal from "./CancelInvoiceModal";
+import type { Invoice } from "@/lib/types";
 import {
   CAMP_DISCOUNTS,
   CAMP_SHUTTLES,
@@ -45,7 +47,8 @@ export type CampApp = {
   invoice_id: string | null;
   memo: string | null;
 };
-export type CampInvoice = { id: string; invoice_no: string; status: string; total: number; paid: number };
+/** raw: 발행 취소 창(CancelInvoiceModal)이 받는 청구서 그대로. */
+export type CampInvoice = { id: string; invoice_no: string; status: string; total: number; paid: number; raw: Invoice };
 export type CampStudent = {
   id: string;
   name: string;
@@ -84,6 +87,7 @@ export default function CampClient({
   const router = useRouter();
   const notify = useToast();
   const [busy, setBusy] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState<{ invoice: Invoice; studentName: string } | null>(null);
   const [filter, setFilter] = useState<"전체" | "접수" | "확정" | "취소" | "미연결" | "재학생" | "외부">("전체");
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -432,6 +436,13 @@ export default function CampClient({
                               <div className={`text-[10px] font-bold ${inv.paid >= inv.total ? "text-emerald-700" : inv.paid > 0 ? "text-amber-700" : "text-slate-500"}`}>
                                 {inv.paid >= inv.total ? "완납" : inv.paid > 0 ? `일부수납 ${won(inv.paid)}` : "청구됨"}
                               </div>
+                              <button
+                                className="text-[10px] text-red-600 underline"
+                                title="청구서를 취소하고 이 신청을 청구 전으로 돌립니다. 주·셔틀을 고쳐 다시 발행할 수 있습니다."
+                                onClick={() => setCancelling({ invoice: inv.raw, studentName: student?.name ?? a.applicant_name ?? "" })}
+                              >
+                                발행 취소
+                              </button>
                             </div>
                           ) : (
                             <span className="text-slate-400">미청구</span>
@@ -504,6 +515,17 @@ export default function CampClient({
             </div>
           </div>
         </div>
+      )}
+      {cancelling && (
+        <CancelInvoiceModal
+          invoice={cancelling.invoice}
+          studentName={cancelling.studentName}
+          onDone={() => {
+            setCancelling(null);
+            router.refresh();
+          }}
+          onClose={() => setCancelling(null)}
+        />
       )}
     </div>
   );

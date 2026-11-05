@@ -245,6 +245,15 @@ export async function POST(req: Request) {
     if (ecErr) followUp.push(`붙어 있던 추가 항목을 풀지 못했습니다(${ecErr.message})`);
   }
 
+  // 캠프 청구서였으면 신청서를 «청구 전»으로 돌립니다. 붙어 있으면 그 신청은 주·셔틀을 못 고치고 다시 발행할 길도 없습니다.
+  {
+    const { error: campErr } = await supabase
+      .from("camp_applications")
+      .update({ invoice_id: null, status: "접수", updated_by: me.name || me.email, updated_at: new Date().toISOString() })
+      .eq("invoice_id", id);
+    if (campErr) followUp.push(`캠프 신청을 청구 전으로 돌리지 못했습니다(${campErr.message}) — 재무 › 캠프에서 확인해 주세요`);
+  }
+
   return NextResponse.json({
     warning: followUp.length > 0 ? `취소는 됐습니다. 다만 ${followUp.join(" · ")}` : undefined,
     ok: true,

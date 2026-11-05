@@ -1,3 +1,4 @@
+import type { Invoice } from "@/lib/types";
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
@@ -54,7 +55,7 @@ export default async function CampPage({ searchParams }: { searchParams: Promise
     const invIds = apps.map((x) => x.invoice_id).filter((v): v is string => !!v);
     if (invIds.length > 0) {
       const [inv, pay] = await Promise.all([
-        supabase.from("invoices").select("id, invoice_no, status, total_amount").in("id", invIds),
+        supabase.from("invoices").select("*").in("id", invIds),
         supabase.from("payments").select("invoice_id, amount").in("invoice_id", invIds),
       ]);
       if (inv.error) loadError = inv.error.message;
@@ -67,6 +68,7 @@ export default async function CampPage({ searchParams }: { searchParams: Promise
         status: v.status as string,
         total: Number(v.total_amount ?? 0),
         paid: paid.get(v.id as string) ?? 0,
+        raw: v as Invoice,
       }));
     }
   }

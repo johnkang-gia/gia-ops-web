@@ -167,12 +167,21 @@ export default function PickupTriage({
    * 이제 대상은 **체크된 아이들**입니다. 한 명이면 예전과 똑같이 한 줄, 여럿이면 아이마다
    * 한 줄씩 나옵니다 - 한 글에 할 일이 둘이면 단추도 둘이어야 합니다.
    */
+  /**
+   * **사람이 더 붙인 아이.** 「서아랑 아인이 4:10 픽업」처럼 한 글에 아이가 둘인데 자동은 한 명(태그된 아이)만 잡습니다.
+   * 「＋ 학생 추가」로 붙이면 그 아이도 대상 줄이 생겨 같은 처리(픽업·결석·전달사항)를 걸 수 있습니다. 화면 상태라 새로
+   * 고치면 사라지지만, 건 처리는 각 아이의 줄로 이미 들어갔으니 남습니다.
+   */
+  const [extra, setExtra] = useState<Record<string, { id: string; name: string }[]>>({});
   const actorsOf = useCallback(
     (r: PickupRow): { id: string; name: string }[] => {
-      if (r.student_id) return [{ id: r.student_id, name: r.matched_name ?? "학생" }];
-      return houseOfRow(r).filter((s) => !(unchecked[r.id] ?? new Set()).has(s.id));
+      const base = r.student_id
+        ? [{ id: r.student_id, name: r.matched_name ?? "학생" }]
+        : houseOfRow(r).filter((s) => !(unchecked[r.id] ?? new Set()).has(s.id));
+      const more = (extra[r.id] ?? []).filter((e) => !base.some((b) => b.id === e.id));
+      return [...base, ...more];
     },
-    [houseOfRow, unchecked],
+    [houseOfRow, unchecked, extra],
   );
 
   const pending = rows;
@@ -864,6 +873,33 @@ export default function PickupTriage({
                     autoFocusQuery={(r.ai_student_name ?? "").replace(/\(.*$/, "").trim()}
                     onPick={(s) => linkOnly(r, s)}
                   />
+                  {/* 한 글에 아이가 여럿일 때. 바꾸기가 아니라 «더하기»라 따로 둡니다 - 바꾸기로 하면 앞 아이가 빠집니다. */}
+                  <StudentPicker
+                    students={students}
+                    disabled={busy}
+                    label="＋ 학생 추가"
+                    buttonClassName="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                    onPick={(s) =>
+                      setExtra((v) => {
+                        const cur = v[r.id] ?? [];
+                        if (cur.some((e) => e.id === s.id) || actorsOf(r).some((a) => a.id === s.id)) return v;
+                        return { ...v, [r.id]: [...cur, { id: s.id, name: s.name }] };
+                      })
+                    }
+                  />
+                  {(extra[r.id] ?? []).map((e) => (
+                    <span key={e.id} className="flex shrink-0 items-center gap-0.5 rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] font-bold text-indigo-800">
+                      ＋{e.name}
+                      <button
+                        type="button"
+                        className="text-indigo-400 hover:text-indigo-700"
+                        title="추가한 아이 빼기"
+                        onClick={() => setExtra((v) => ({ ...v, [r.id]: (v[r.id] ?? []).filter((x) => x.id !== e.id) }))}
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
                   <label className="flex shrink-0 items-center gap-1 text-[11px] font-semibold text-slate-500" title="이 연락이 가리키는 날. 틀렸으면 고친 뒤 확정·결석·지각을 누릅니다.">
                     날짜
                     <input

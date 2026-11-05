@@ -23,6 +23,7 @@ import { APP_VERSION } from "@/lib/version";
 import { ToastProvider } from "@/components/common/ToastProvider";
 import { HomonymProvider } from "@/components/common/HomonymProvider";
 import { StudentPanelProvider } from "@/components/students/StudentPanelProvider";
+import ChatDock from "@/components/common/ChatDock";
 import { loadHomonyms } from "@/lib/homonyms";
 import { ConfirmProvider } from "@/components/common/ConfirmProvider";
 import { LanguageProvider } from "@/components/common/LanguageProvider";
@@ -746,6 +747,8 @@ export default async function DashboardLayout({
         <Isolate><SectionTabs isTeacher={isTeacher} isHomeroom={isHomeroomTeacher} /></Isolate>
         <Isolate><MainArea>{children}</MainArea></Isolate>
       </div>
+      {/* 구글챗 서랍 손잡이 - 교직원(행정 이상)에게만. 교사는 구글챗을 자기 화면에서 씁니다. */}
+      {isStaffOrAboveUser(me) && <ChatDock me={me.email} />}
     </div>
     </StudentPanelProvider>
     </HomonymProvider>

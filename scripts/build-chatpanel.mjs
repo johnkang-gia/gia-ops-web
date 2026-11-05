@@ -38,23 +38,31 @@ for (const f of ["background.js", "bridge.js", "panel.html", "rules.json"]) {
   if (!files.includes(f)) { console.error(`✗ chatpanel: ${f} 가 없습니다`); process.exit(1); }
 }
 
-const locals = [], centrals = [];
-let offset = 0;
-for (const f of files) {
-  const data = readFileSync(join(SRC, f));
-  const name = Buffer.from(FOLDER + f, "utf8");
-  const crc = crc32(data);
-  const local = Buffer.concat([u32(0x04034b50), u16(20), u16(FLAG_UTF8), u16(0), DOS_TIME, DOS_DATE, u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0), name, data]);
-  const central = Buffer.concat([u32(0x02014b50), u16(20), u16(20), u16(FLAG_UTF8), u16(0), DOS_TIME, DOS_DATE, u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset), name]);
-  locals.push(local); centrals.push(central); offset += local.length;
+function buildZip(prefix) {
+  const locals = [], centrals = [];
+  let offset = 0;
+  for (const f of files) {
+    const data = readFileSync(join(SRC, f));
+    const name = Buffer.from(prefix + f, "utf8");
+    const crc = crc32(data);
+    const local = Buffer.concat([u32(0x04034b50), u16(20), u16(FLAG_UTF8), u16(0), DOS_TIME, DOS_DATE, u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0), name, data]);
+    const central = Buffer.concat([u32(0x02014b50), u16(20), u16(20), u16(FLAG_UTF8), u16(0), DOS_TIME, DOS_DATE, u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset), name]);
+    locals.push(local); centrals.push(central); offset += local.length;
+  }
+  const cd = Buffer.concat(centrals);
+  const end = Buffer.concat([u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length), u32(cd.length), u32(offset), u16(0)]);
+  return Buffer.concat([...locals, cd, end]);
 }
-const cd = Buffer.concat(centrals);
-const end = Buffer.concat([u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length), u32(cd.length), u32(offset), u16(0)]);
-const zip = Buffer.concat([...locals, cd, end]);
+// ① 손으로 불러오는 용: 폴더째. ② 크롬 웹스토어 올리기 용: manifest.json 이 맨 위에 있어야 해서 폴더 없이.
+const zip = buildZip(FOLDER);
+const storeZip = buildZip("");
+const STORE_OUT = "public/chatpanel/gia-chat-panel-store.zip";
 
 mkdirSync("public/chatpanel", { recursive: true });
 const prev = existsSync(OUT) ? readFileSync(OUT) : null;
 if (!prev || !prev.equals(zip)) writeFileSync(OUT, zip);
+const prevStore = existsSync(STORE_OUT) ? readFileSync(STORE_OUT) : null;
+if (!prevStore || !prevStore.equals(storeZip)) writeFileSync(STORE_OUT, storeZip);
 // 화면이 버전을 읽도록 같이 적어 둡니다.
 writeFileSync("public/chatpanel/version.json", JSON.stringify({ version: manifest.version, files: files.length, bytes: zip.length }) + "\n");
 console.log(`✓ chatpanel ${manifest.version}: ${files.length}개 파일 → ${OUT} (${zip.length} bytes${prev && prev.equals(zip) ? ", 변경 없음" : ""})`);

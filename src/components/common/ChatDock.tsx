@@ -25,6 +25,8 @@ const NOTIFY_KEY = "gia-chat-notify";
 const MODE_KEY = "gia-chat-mode"; // "popup" 이면 확장 없이도 묻지 않고 창으로
 const POPUP_NAME = "gia-google-chat";
 const ZIP_URL = "/chatpanel/gia-chat-panel.zip";
+/** 크롬 웹스토어(비공개 링크) 주소. 정해지면 설치는 한 번 누르기이고 갱신은 크롬이 스스로 합니다. */
+const STORE_URL = process.env.NEXT_PUBLIC_CHAT_PANEL_STORE_URL || "";
 
 function extVersion(): string | null {
   if (typeof document === "undefined") return null;
@@ -36,6 +38,7 @@ export default function ChatDock({ me }: { me: string }) {
   const [latest, setLatest] = useState<GoogleChatMirrorMessage | null>(null);
   const [notify, setNotify] = useState(false);
   const [ext, setExt] = useState<string | null>(null);
+  const [latestVer, setLatestVer] = useState<string | null>(null);
   const [guide, setGuide] = useState(false);
   const seenRef = useRef<string>("");
   const popupRef = useRef<Window | null>(null);
@@ -53,6 +56,14 @@ export default function ChatDock({ me }: { me: string }) {
     tick();
     const t = window.setInterval(tick, 1500);
     return () => window.clearInterval(t);
+  }, []);
+
+  // 운영앱이 배포한 확장 버전. 깔린 것과 다르면 손잡이 아래에 「갱신」이 뜹니다.
+  useEffect(() => {
+    fetch("/chatpanel/version.json", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { version?: string } | null) => setLatestVer(j?.version ?? null))
+      .catch(() => setLatestVer(null));
   }, []);
 
   // 마지막으로 연 뒤 들어온 글 수 + 실시간.
@@ -200,12 +211,23 @@ export default function ChatDock({ me }: { me: string }) {
               설치
             </button>
           )}
+          {ext && latestVer && ext !== latestVer && (
+            <button
+              type="button"
+              onClick={() => setGuide(true)}
+              className="rounded-l-lg border border-r-0 border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-700 shadow"
+              title={`확장 새 버전 v${latestVer} (지금 v${ext})`}
+            >
+              갱신
+            </button>
+          )}
         </div>
         {hint && <div className="absolute right-full top-0 mr-2 w-64 rounded-lg bg-slate-800 px-2 py-1.5 text-[11px] text-white shadow-lg">{hint}</div>}
       </div>
       {guide && (
         <InstallGuide
           ext={ext}
+          latestVer={latestVer}
           onClose={() => setGuide(false)}
           onOpenPanel={() => {
             setGuide(false);
@@ -228,10 +250,12 @@ function isMac() {
   return typeof navigator !== "undefined" && /Mac/i.test(navigator.platform ?? "");
 }
 
-function InstallGuide({ ext, onClose, onOpenPanel, onPopup }: { ext: string | null; onClose: () => void; onOpenPanel: () => void; onPopup: (remember: boolean) => void }) {
+function InstallGuide({ ext, latestVer, onClose, onOpenPanel, onPopup }: { ext: string | null; latestVer: string | null; onClose: () => void; onOpenPanel: () => void; onPopup: (remember: boolean) => void }) {
   const [copied, setCopied] = useState(false);
   const [remember, setRemember] = useState(false);
+  const [manual, setManual] = useState(!STORE_URL);
   const mac = isMac();
+  const outdated = !!ext && !!latestVer && ext !== latestVer;
 
   async function copyAddr() {
     try {
@@ -251,7 +275,10 @@ function InstallGuide({ ext, onClose, onOpenPanel, onPopup }: { ext: string | nu
           <a href={ZIP_URL} download="gia-chat-panel.zip" className="rounded-md bg-slate-800 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-slate-900">
             ⬇ gia-chat-panel.zip 내려받기
           </a>
-          <span className="text-[11px] text-slate-500">파일 6개짜리 작은 확장입니다. 토들·수집과는 상관없고 구글챗을 여는 일만 합니다.</span>
+          <span className="text-[11px] text-slate-500">
+            파일 6개짜리 작은 확장입니다. 패널 안 화면은 운영앱이 그리므로 화면이 바뀌어도 다시 깔 일은 드뭅니다. 「갱신」이 뜨면 새로 받아
+            같은 폴더에 덮어쓰고 chrome://extensions 의 ↻ 를 누르면 됩니다.
+          </span>
         </div>
       ),
     },
@@ -320,6 +347,11 @@ function InstallGuide({ ext, onClose, onOpenPanel, onPopup }: { ext: string | nu
           {ext ? (
             <>
               <span className="font-bold">✓ 확장 확인됨 (v{ext})</span>
+              {outdated && (
+                <span className="text-sky-800">
+                  · 새 버전 v{latestVer} 있음 — {STORE_URL ? "웹스토어 설치본은 크롬이 몇 시간 안에 스스로 갱신합니다." : "아래 「새로 받아 다시 불러오기」."}
+                </span>
+              )}
               <button type="button" onClick={onOpenPanel} className="ml-auto rounded-md bg-emerald-600 px-3 py-1 font-bold text-white hover:bg-emerald-700">
                 사이드패널 열기 →
               </button>
@@ -331,7 +363,22 @@ function InstallGuide({ ext, onClose, onOpenPanel, onPopup }: { ext: string | nu
           )}
         </div>
 
-        <ol className="mt-4 space-y-3">
+        {STORE_URL && (
+          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+            <div className="text-[13px] font-bold text-emerald-900">한 번 누르면 끝 — 크롬 웹스토어에서 설치</div>
+            <p className="mt-1 text-[12px] text-emerald-900/80">
+              열리는 페이지에서 「Chrome에 추가」를 누르면 바로 깔립니다. 폴더를 둘 필요가 없고, 새 버전이 나오면 크롬이 스스로 갱신합니다.
+              설치 뒤 이 화면을 새로고침하면 위 띠가 「확인됨」으로 바뀝니다.
+            </p>
+            <a href={STORE_URL} target="_blank" rel="noreferrer" className="mt-2 inline-block rounded-md bg-emerald-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-emerald-700">
+              웹스토어에서 설치 ↗
+            </a>
+            <button type="button" onClick={() => setManual((v) => !v)} className="ml-3 text-[11px] text-slate-500 underline">
+              {manual ? "수동 설치 접기" : "웹스토어가 안 될 때 수동 설치"}
+            </button>
+          </div>
+        )}
+        <ol className={"mt-4 space-y-3" + (manual ? "" : " hidden")}>
           {steps.map((s, i) => (
             <li key={i} className="flex gap-3">
               <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[12px] font-bold text-white">{i + 1}</span>

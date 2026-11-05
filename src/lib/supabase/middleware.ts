@@ -150,7 +150,11 @@ export async function updateSession(request: NextRequest) {
     // 로그인 없이 엽니다. 열쇠는 그 방 하나만 열고, 단추는 호출·시작·종료·지연·되돌리기뿐입니다.
     path.startsWith("/consult-room/") ||
     path.startsWith("/api/consult/room/") ||
-    path.startsWith("/cr/");
+    path.startsWith("/cr/") ||
+    // 구글챗 패널 확장이 크롬 사이드패널 안에 끼워 넣는 화면과 확장 파일(zip·버전). 확장 안의 iframe 은 다른 사이트
+    // 맥락이라 운영앱 세션 쿠키가 붙지 않고, 붙었다면 /login 화면이 패널에 떠서 «왜 로그인이 또 뜨지»가 됩니다.
+    // 이 화면은 도구 줄과 chat.google.com iframe 뿐이라 자료가 없습니다.
+    path.startsWith("/chatpanel/");
 
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();

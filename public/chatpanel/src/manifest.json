@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GIA 구글챗 패널",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "GIA 운영앱의 「💬 구글챗」 손잡이를 누르면 구글챗이 크롬 오른쪽 사이드패널에서 열립니다. 로그인은 본인 크롬 계정 그대로입니다.",
   "icons": { "128": "icon.png" },
   "permissions": ["sidePanel", "declarativeNetRequest"],
@@ -11,7 +11,8 @@
     "https://accounts.google.com/*",
     "https://*.google.com/*",
     "https://*.googleusercontent.com/*",
-    "https://*.gstatic.com/*"
+    "https://*.gstatic.com/*",
+    "https://gia-ops.vercel.app/*"
   ],
   "background": { "service_worker": "background.js" },
   "side_panel": { "default_path": "panel.html" },

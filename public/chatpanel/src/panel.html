@@ -4,37 +4,19 @@
 <meta charset="utf-8" />
 <title>GIA 구글챗</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #fff; font-family: system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif; }
-  #bar { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; background: #0f172a; color: #fff; font-size: 12px; }
-  #bar a, #bar button { color: #cbd5e1; font-size: 11px; background: none; border: 1px solid #334155; border-radius: 6px; padding: 2px 6px; cursor: pointer; text-decoration: none; }
-  #bar a:hover, #bar button:hover { background: #1e293b; color: #fff; }
-  #frame { width: 100%; height: calc(100% - 30px); border: 0; }
-  #help { display: none; padding: 14px; font-size: 13px; line-height: 1.6; color: #334155; border-top: 1px solid #e2e8f0; }
+  html, body { margin: 0; height: 100%; background: #fff; }
+  iframe { width: 100%; height: 100%; border: 0; display: block; }
+  #fallback { display: none; padding: 14px; font: 13px/1.6 system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif; color: #334155; }
 </style>
 </head>
 <body>
-  <div id="bar">
-    <b>💬 구글챗</b>
-    <button id="reload" title="다시 불러오기">↻</button>
-    <a href="https://chat.google.com/" target="_blank" title="새 탭으로 열기">새 탭 ↗</a>
-    <button id="helpBtn" title="안 보일 때">?</button>
-    <span style="margin-left:auto;opacity:.6">GIA 구글챗 패널</span>
-  </div>
-  <iframe id="frame" src="https://chat.google.com/" allow="clipboard-read; clipboard-write; notifications; microphone; camera"></iframe>
-  <div id="help">
-    화면이 비어 있거나 로그인 화면이 반복되면: ① 위 「새 탭 ↗」로 구글챗에 한 번 로그인한 뒤 ② 「↻」를 누르세요.<br />
-    크롬 설정에서 서드파티 쿠키를 모두 차단해 두면 이 패널 안에서는 로그인이 유지되지 않습니다 -
-    chrome://settings/cookies 에서 「시크릿 모드에서만 차단」으로 두거나 chat.google.com 을 허용 목록에 넣으세요.
-  </div>
+  <!-- 패널 안의 도구 줄과 구글챗 iframe 은 운영앱이 그립니다(/chatpanel/panel). 그래서 패널 화면을 고칠 때 확장을 다시 깔지 않습니다 -
+       패널을 다시 열면 운영앱이 배포한 최신 화면이 뜹니다. 확장이 직접 가진 것은 «사이드패널을 열고 머리글을 벗기는» 일뿐입니다. -->
+  <iframe id="shell" src="https://gia-ops.vercel.app/chatpanel/panel" allow="clipboard-read; clipboard-write; notifications; microphone; camera"></iframe>
+  <div id="fallback">운영앱(gia-ops.vercel.app)에 닿지 못했습니다. 인터넷 연결을 확인하거나 <a href="https://chat.google.com/" target="_blank">구글챗을 새 탭으로</a> 여세요.</div>
   <script>
-    const frame = document.getElementById("frame");
-    const help = document.getElementById("help");
-    document.getElementById("reload").addEventListener("click", () => { frame.src = "https://chat.google.com/"; });
-    document.getElementById("helpBtn").addEventListener("click", () => {
-      const on = help.style.display !== "block";
-      help.style.display = on ? "block" : "none";
-      frame.style.height = on ? "calc(100% - 30px - 110px)" : "calc(100% - 30px)";
-    });
+    const f = document.getElementById("shell");
+    f.addEventListener("error", () => { document.getElementById("fallback").style.display = "block"; });
   </script>
 </body>
 </html>

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { readCampForm } from "@/lib/campFee";
 import { matchCampStudent } from "@/lib/campMatch";
-import { loadStudents } from "@/lib/students";
+import { loadStudentsWithPhones } from "@/lib/students";
 
 /**
  * 캠프 신청 구글폼 → 앱. 폼 결과 시트에 붙인 앱스크립트가 새 응답마다(그리고 「지금까지 전부 보내기」로) 부릅니다.
@@ -94,14 +94,15 @@ export async function POST(req: Request) {
   const fresh = prepared.filter((p) => !idOf.has(p.key));
   let added = 0;
   let linked = 0;
+  // 보호자 번호는 동명이인을 가르는 데만 씁니다(서버 안에서만, 응답에 싣지 않음).
   // 명부에 확실히 한 명뿐인 아이는 들어오는 즉시 잇습니다(campMatch). 애매하면 비워 두고 사람이 고릅니다.
   // 명부를 못 읽어도 응답은 받습니다 - 잇는 일은 화면의 「자동 연결」로 다시 할 수 있습니다.
-  const roster = fresh.length > 0 ? await loadStudents(supabase, { status: "all" }) : { rows: [], error: null };
+  const roster = fresh.length > 0 ? await loadStudentsWithPhones(supabase, { status: "all" }) : { rows: [], error: null };
   if (fresh.length > 0) {
     const { error, count } = await supabase.from("camp_applications").insert(
       fresh.map((p) => {
         const f = readCampForm(p.answers);
-        const m = roster.error ? null : matchCampStudent({ applicant_name: f.applicant_name, applicant_name_en: f.applicant_name_en, birth_date: f.birth_date, says_current: f.says_current }, roster.rows);
+        const m = roster.error ? null : matchCampStudent({ applicant_name: f.applicant_name, applicant_name_en: f.applicant_name_en, birth_date: f.birth_date, says_current: f.says_current, guardian_phone: f.guardian_phone }, roster.rows);
         const studentId = m && "studentId" in m ? m.studentId : null;
         if (studentId) linked++;
         return {

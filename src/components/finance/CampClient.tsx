@@ -7,7 +7,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import { Who } from "@/components/common/HomonymProvider";
 import { APP_ORIGIN } from "@/lib/appUrl";
 import { TERM_GROUPS } from "@/lib/termTypes";
-import { campGroupOf } from "@/lib/campMatch";
+import { campGroupOf, campLinkSuspect } from "@/lib/campMatch";
 import {
   CAMP_DISCOUNTS,
   CAMP_SHUTTLES,
@@ -129,6 +129,8 @@ export default function CampClient({
 
   /** 재학생/외부 — 이어진 학생의 상태가 먼저, 아직 안 이었으면 폼의 답. 청구서도 이 묶음별로 냅니다. */
   const groupOf = (a: CampApp) => campGroupOf(a.student_id ? studentOf.get(a.student_id)?.status ?? null : null, a.says_current);
+  /** 「재학생」이라 답했는데 재학생이 아닌 학생(옛 중복 줄 등)에 이어진 줄 - 잘못 이었을 가능성이 큽니다. */
+  const suspectOf = (a: CampApp) => campLinkSuspect(a.student_id ? studentOf.get(a.student_id)?.status ?? null : null, a.says_current);
   const shown = apps.filter((a) => {
     if (filter === "미연결" && a.student_id) return false;
     if ((filter === "재학생" || filter === "외부") && (a.status === "취소" || groupOf(a) !== filter)) return false;
@@ -151,6 +153,7 @@ export default function CampClient({
     const ask = (r.ask as string[] | undefined) ?? [];
     const parts = [
       r.linked != null ? `${r.linked}명 연결${r.ambiguous ? ` · 같은 이름이 여럿이라 ${r.ambiguous}명은 직접 골라주세요` : ""}` : null,
+      r.relinked ? `재학생이 아닌 줄에 붙어 있던 ${r.relinked}명을 재학생으로 다시 연결` : null,
       r.made != null ? `${r.made}건 완료` : null,
       ask.length ? `같은 이름이 명부에 있어 넣지 않음: ${ask.join(", ")} (표에서 직접 확인)` : null,
       failed.length ? `실패 ${failed.length}건: ${failed.slice(0, 3).join(" / ")}` : null,
@@ -232,7 +235,7 @@ export default function CampClient({
 
           <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50/50 px-2 py-1.5 text-[12px]">
             <span className="font-bold text-indigo-900">한꺼번에</span>
-            <button disabled={!!busy || totals.unlinked === 0} onClick={() => void bulk({ action: "autoLink" }, "자동 연결")} className="rounded border border-indigo-200 bg-white px-2 py-0.5 font-bold text-indigo-800 disabled:opacity-40" title="명부에 같은 이름이 한 명뿐이거나 생일로 한 명이 되는 신청만 잇습니다. 같은 이름이 여럿이면 직접 고릅니다.">
+            <button disabled={!!busy || totals.unlinked + live.filter(suspectOf).length === 0} onClick={() => void bulk({ action: "autoLink" }, "자동 연결")} className="rounded border border-indigo-200 bg-white px-2 py-0.5 font-bold text-indigo-800 disabled:opacity-40" title="명부에 같은 이름이 한 명뿐이면 잇고, 같은 이름이 여럿이면 보호자 전화번호 → 생일 → 재학 답 순으로 한 명이 될 때만 잇습니다. 재학생이 아닌 학생에 잘못 붙은 줄도 다시 봅니다.">
               ① 재학생 자동 연결 ({totals.unlinked})
             </button>
             <button
@@ -315,6 +318,11 @@ export default function CampClient({
                         <td className="px-2 py-1.5">
                           <div className="font-bold text-slate-800">
                             <span className={`mr-1 rounded px-1 text-[10px] font-bold ${groupOf(a) === "재학생" ? "bg-emerald-100 text-emerald-800" : "bg-sky-100 text-sky-800"}`}>{groupOf(a)}</span>
+                            {suspectOf(a) && (
+                              <span className="mr-1 rounded bg-red-100 px-1 text-[10px] font-bold text-red-700" title="폼에는 재학생이라 답했는데 이어진 학생이 재학생이 아닙니다. 「재학생 자동 연결」을 누르거나 학생을 다시 고르세요.">
+                                연결 확인
+                              </span>
+                            )}
                             {a.applicant_name || <span className="text-red-600">이름 못 읽음</span>}
                             {a.applicant_name_en && <span className="ml-1 font-normal text-slate-500">{a.applicant_name_en}</span>}
                           </div>

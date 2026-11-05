@@ -6,7 +6,7 @@ import { hasFinanceAccess } from "@/lib/roles";
 import { todayKst } from "@/lib/kst";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
 import { gradeLabel } from "@/lib/feeItems";
-import { loadStudents, loadStudentsWithPhones } from "@/lib/students";
+import { loadStudentsWithPhones } from "@/lib/students";
 import { campGroupOf, matchCampStudent } from "@/lib/campMatch";
 import { addStudents } from "@/lib/studentAdd";
 import { resolveRecipient, phonesOf, chosenRoleOf } from "@/lib/alltalkpay";
@@ -134,7 +134,8 @@ export async function POST(req: Request) {
     const { data: rows, error } = await supabase.from("camp_applications").select("*").eq("term_id", termId).neq("status", "취소");
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     const apps = (rows ?? []) as (CampAppRow & { applicant_name_en: string | null; birth_date: string | null; says_current: boolean | null; grade: string | null })[];
-    const roster = await loadStudents(supabase, { status: "all" });
+    // 보호자 번호는 동명이인을 가르는 재료입니다(campMatch). 응답에는 싣지 않습니다.
+    const roster = await loadStudentsWithPhones(supabase, { status: "all" });
     if (roster.error) return NextResponse.json({ error: `명부를 읽지 못했습니다: ${roster.error}` }, { status: 500 });
     const statusOf = new Map(roster.rows.map((r) => [r.id, r.status as string]));
 
@@ -157,7 +158,22 @@ export async function POST(req: Request) {
         if (upErr) failed.push(`${a.applicant_name}: ${upErr.message}`);
         else linked++;
       }
-      return NextResponse.json({ ok: failed.length === 0, linked, ambiguous, failed, error: failed.length ? failed.join(" · ") : undefined });
+      // 이미 이어졌는데 그 학생이 재학생이 아닌 줄은 다시 봅니다. 옛 중복 줄(퇴소·빈 칸)에 잘못 붙어 «외부»로
+      // 청구될 뻔한 경우입니다. 근거(전화·생일·재학 답)로 재학생 한 명이 나올 때만 옮기고, 청구서가 나간 줄은 두지 않습니다.
+      let relinked = 0;
+      for (const a of apps.filter((x) => x.student_id && !x.invoice_id && statusOf.get(x.student_id) !== "active")) {
+        const m = matchCampStudent(a, roster.rows);
+        if (!m || "ambiguous" in m || m.studentId === a.student_id || statusOf.get(m.studentId) !== "active") continue;
+        const { error: upErr } = await supabase
+          .from("camp_applications")
+          .update({ student_id: m.studentId, updated_by: by, updated_at: new Date().toISOString() })
+          .eq("id", a.id)
+          .eq("student_id", a.student_id as string)
+          .is("invoice_id", null);
+        if (upErr) failed.push(`${a.applicant_name}: ${upErr.message}`);
+        else relinked++;
+      }
+      return NextResponse.json({ ok: failed.length === 0, linked, relinked, ambiguous, failed, error: failed.length ? failed.join(" · ") : undefined });
     }
 
     if (action === "bulkExternal") {
